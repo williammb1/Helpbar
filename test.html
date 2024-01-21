@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Bar</title>
+    <link rel="stylesheet" href="https://webchat-styler-css.botpress.app/prod/code/e2291af6-b146-4c86-80d4-375bb6dd246b/v96577/style.css">
+</head>
+<body>
+
+<div id="question-container" style="display: flex; margin-top: 5px;">
+    <input type="text" id="question" placeholder="Type your question, then press enter" onkeypress="checkEnter(event)" style="flex-grow: 1;">
+    <button id="enterButton">Enter</button>
+</div>
+<div id="answer" style="display: none;">
+    <div id="loading" style="display: none; text-align: center;">
+        <p>Fetching an answer for you!</p>
+        <iframe src="https://giphy.com/embed/1Qkrddv7glE393e2X8" frameBorder="0" class="giphy-embed" allowFullScreen></iframe>
+    </div>
+    <div id="answer-text"></div>
+</div>
+
+<script>
+var lastQuestion = ''; // Variable to store the last asked question
+var lastAnswer = ''; // Variable to store the last answer
+
+function showLoading() {
+    const loadingElement = document.getElementById('loading');
+    loadingElement.style.display = 'block';
+}
+
+function clearLoading() {
+    const loadingElement = document.getElementById('loading');
+    loadingElement.style.display = 'none';
+}
+
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+function checkEnter(event) {
+    if (event.keyCode === 13) {
+        event.preventDefault();
+        queryAPI();
+    }
+}
+
+document.getElementById('enterButton').addEventListener('click', function() {
+    queryAPI();
+});
+
+async function queryAPI() {
+    const questionElement = document.getElementById('question');
+    const answerElement = document.getElementById('answer');
+    let answerTextElement = document.getElementById('answer-text');
+    const question = questionElement.value;
+
+    if (answerTextElement) {
+        answerTextElement.innerHTML = '';
+    }
+
+    if (question.length === 0) {
+        answerElement.style.display = 'none';
+        return;
+    }
+
+    answerElement.style.display = 'block';
+    showLoading();
+
+    lastQuestion = question; // Store the question when it's asked
+
+    const formattedBody = JSON.stringify({ body: JSON.stringify({ "in-0": question }) });
+
+    try {
+        const response = await fetch(
+            "https://7woflntm2c52r3cjdmvj2pub2m0ltuua.lambda-url.ap-southeast-2.on.aws/",
+            {
+                method: 'POST',
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Content-Type': 'application/json',
+                },
+                body: formattedBody
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const jsonResponse = await response.json();
+
+        let answer = '';
+        if (jsonResponse && jsonResponse.body) {
+            answer = jsonResponse.body.replace(/^"|"$/g, '');
+        } else {
+            answer = 'No valid answer in the response.';
+        }
+
+        lastAnswer = answer; // Store the answer
+
+        const formattedText = makeUrlsClickableAndFormatText(answer);
+        answerTextElement.innerHTML = formattedText;
+    } catch (error) {
+        console.error('Fetch error:', error);
+        answerTextElement.innerHTML = `Error: ${error.message}`;
+    } finally {
+        clearLoading();
+        questionElement.value = '';
+    }
+}
+
+function makeUrlsClickableAndFormatText(text) {
+    // Convert URLs to clickable links and attach event listeners for tracking
+    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+    text = text.replace(urlRegex, function(url) {
+        return `<a href="${url}" target="_blank" class="tracked-link">${url}</a>`;
+    });
+
+    // Add HTML line breaks after each sentence-ending period
+    return text.replace(/\.(\s|$)/g, '.<br><br>');
+}
+
+document.addEventListener('click', function(event) {
+    if (event.target.classList.contains('tracked-link')) {
+        sendLinkClickToZapier(event.target.href);
+    }
+});
+
+function sendLinkClickToZapier(clickedUrl) {
+    const zapierWebhookUrl = 'https://hooks.zapier.com/hooks/catch/16189163/3ga3brm/';
+
+    fetch(zapierWebhookUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            url: clickedUrl,
+            question: lastQuestion,
+            answer: lastAnswer // Send the answer along with the question
+        })
+    }).then(response => {
+        if (response.ok) {
+            console.log('Click tracked successfully');
+        } else {
+            console.error('Error tracking click');
+        }
+    }).catch(error => {
+        console.error('Error sending data to Zapier:', error);
+    });
+}
+
+</script>
+  </body>
+</html>
